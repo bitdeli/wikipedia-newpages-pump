@@ -13,16 +13,17 @@ WPNEW_URL = "http://en.wikipedia.org/w/index.php?title=Special:NewPages&offset=&
 
 BITDELI_URL = "https://in.bitdeli.com/events/i-04bac7a80799e8-ee380031"
 BITDELI_AUTH = os.environ['BITDELI_AUTH']
+TIME_FORMAT = '%H:%M, %d %B %Y'
 
 def read_newest():
     try:
-        return open('newest-processed').read().decode('utf-8')
+        return time.strptime(open('newest-processed').read(), TIME_FORMAT)
     except:
-        return ''
+        return 0
 
 def write_newest(newest_processed):
     f = open('newest-processed', 'w')
-    f.write(newest_processed.encode('utf-8'))
+    f.write(time.strftime(TIME_FORMAT, newest_processed))
     f.close()
 
 def parse_entry(entry):
@@ -30,8 +31,9 @@ def parse_entry(entry):
         m = entry.find(True, {'class': fieldname})
         return m.string if m else None
     article = {}
-    article['name'] = name = field('mw-newpages-pagename')
-    article['time'] = field('mw-newpages-time')
+    article['name'] = field('mw-newpages-pagename')
+    tstamp = time.strptime(field('mw-newpages-time'), TIME_FORMAT)
+    article['time'] = time.strftime('%Y-%m-%d %H:%M', tstamp)
     article['link'] = "http://en.wikipedia.org" + entry.find(True, 'mw-newpages-pagename')['href']
     user = field('mw-userlink')
     if user:
@@ -48,7 +50,7 @@ def parse_entry(entry):
     article['comment'] = ' '.join(comment.findAll(text=True)).replace(' . ', '. ')\
                                                              .replace(' , ', ', ')\
                                                              .replace('  ', ' ').strip()
-    return name, article
+    return tstamp, article
 
 def entries():
     req = Request(WPNEW_URL, headers={'user-agent': 'bitdeli-python'})
@@ -64,22 +66,22 @@ def send_to_bitdeli(article, group_key):
     event = json.dumps({'auth': BITDELI_AUTH,
                         'group_key': group_key,
                         'object': article})
-    print urlopen(BITDELI_URL, event).read()
+    print  event #urlopen(BITDELI_URL, event).read()
 
 def pump(newest_processed):
     while True:
         try:
+            print 'fetch'
             group_key = int(time.time())
-            first = None
-            for name, article in entries():
-                if name == newest_processed:
+            new_newest = newest_processed
+            for tstamp, article in entries():
+                print 'tstamp', time.strftime(TIME_FORMAT, tstamp)
+                if tstamp == newest_processed:
                     break
-                if not first:
-                    first = name
+                new_newest = max(tstamp, new_newest)
                 send_to_bitdeli(article, group_key)
-            if first:
-                newest_processed = first
-                write_newest(first)
+            newest_processed = new_newest
+            write_newest(newest_processed)
         except Exception:
             traceback.print_exc()
         time.sleep(MINUTE)
